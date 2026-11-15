@@ -1,0 +1,61 @@
+name: bifrost
+
+# Запуск: docker compose up -d
+# Остановка: docker compose down
+#
+# Init-контейнер срабатывает один раз — при первом запуске (нет config.db):
+# копирует config.json в data/, вшивая ключ из LITELLM_API_KEY литералом.
+# Все последующие запуски Bifrost делает чисто из БД — config.json больше
+# не применяется, правки из UI и ключ сохраняются при любых рестартах.
+# Применить конфиг заново: docker compose down && rm -rf data && docker compose up -d
+
+services:
+  bifrost-init:
+    image: busybox:1.37
+    # Ключ нужен здесь: init вшивает его в копию config.json, чтобы в БД
+    # попало литеральное значение — тогда рестарты без переменной не затрут ключ
+    # (Bifrost при каждом старте резолвит env.-ссылки, пустая переменная = пустой ключ).
+    environment:
+      LITELLM_API_KEY: "${LITELLM_API_KEY:-}"
+    volumes:
+      - ./data:/app/data
+      - ./config.json:/source/config.json:ro
+    entrypoint:
+      - sh
+      - -c
+      - |
+        if [ -f /app/data/config.db ]; then
+          rm -f /app/data/config.json /app/data/.config-seed
+          echo "init: пропуск — БД уже инициализирована"
+        else
+          val=$$(printf '%s' "$$LITELLM_API_KEY" | sed -e 's/\\/\\\\/g' -e 's/[\/&|]/\\&/g')
+          sed "s/env\.LITELLM_API_KEY/$$val/g" /source/config.json > /app/data/config.json
+          echo "init: первый запуск — конфиг применён, ключ вшит в БД"
+        fi
+    restart: "no"
+
+  bifrost:
+    image: ${BIFROST_IMAGE:-maximhq/bifrost:v2.2.5}
+    container_name: ${BIFROST_CONTAINER_NAME:-bifrost}
+    depends_on:
+      bifrost-init:
+        condition: service_completed_successfully
+    ports:
+      - "${BIFROST_PORT:-8080}:8080/tcp"
+    environment:
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "8080"
+      APP_DIR: "/app/data"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+      LOG_STYLE: "${LOG_STYLE:-json}"
+      # Секреты — дефолты для env.-ссылок в config.json; пароль админа нужен
+      # только при первом запуске. API-ключ передаётся строкой и вшивается в БД
+      # init-контейнером:   LITELLM_API_KEY=sk-... docker compose up -d
+      BIFROST_ADMIN_PASSWORD: "${BIFROST_ADMIN_PASSWORD:-Change_Me_123!}"
+      # Ollama: на Linux задать OLLAMA_URL=http://172.17.0.1:11434 строкой
+      OLLAMA_URL: "${OLLAMA_URL:-http://host.docker.internal:11434}"
+      SSL_CERT_FILE: /app/certs/ca-bundle.pem
+    volumes:
+      - ./data:/app/data   # SQLite-базы (config.db, logs.db), логи, config.json
+      - ./certs:/app/certs:ro   # доверенные корни: корп. CA + публичные
+    restart: unless-stopped

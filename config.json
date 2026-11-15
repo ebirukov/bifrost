@@ -1,0 +1,54 @@
+{
+  "version": 2,
+  "client": {
+    "log_retention_days": 3
+  },
+  "auth_config": {
+    "is_enabled": true,
+    "admin_username": "admin",
+    "admin_password": "env.BIFROST_ADMIN_PASSWORD"
+  },
+  "providers": {
+    "magnit_llm": {
+      "network_config": {
+        "base_url": "https://llmlite.ailab-copilot-prod.corp.tander.ru/",
+        "default_request_timeout_in_seconds": 300,
+        "max_retries": 0,
+        "retry_backoff_initial": 500,
+        "retry_backoff_max": 5000,
+        "insecure_skip_verify": true,
+        "stream_idle_timeout_in_seconds": 120,
+        "keep_alive_timeout_in_seconds": 30,
+        "max_conns_per_host": 5000,
+        "allow_private_network": true
+      },
+      "custom_provider_config": {
+        "is_key_less": false,
+        "base_provider_type": "openai"
+      },
+      "keys": [
+        {
+          "name": "litellm_apikey",
+          "value": "env.LITELLM_API_KEY",
+          "models": ["*"],
+          "weight": 1,
+          "enabled": true
+        }
+      ]
+    },
+    "ollama": {
+      "keys": [
+        {
+          "name": "mac_ollama",
+          "value": "",
+          "ollama_key_config": {
+            "url": "env.OLLAMA_URL"
+          },
+          "models": ["qwen2.5-coder:14b", "qwen3-coder:30b"],
+          "weight": 1,
+          "enabled": true
+        }
+      ]
+    }
+  }
+}
